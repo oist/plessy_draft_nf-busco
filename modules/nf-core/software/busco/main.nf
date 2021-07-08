@@ -5,7 +5,7 @@ options        = initOptions(params.options)
 
 process BUSCO {
     tag "$meta.id"
-    label 'process_medium'
+    label 'process_high'
     publishDir "${params.outdir}",
         mode: params.publish_dir_mode,
         saveAs: { filename -> saveFiles(filename:filename, options:params.options, publish_dir:getSoftwareName(task.process), meta:meta, publish_by_meta:['id']) }
@@ -18,8 +18,7 @@ process BUSCO {
     }
 
     input:
-    tuple val(meta), path(fasta)
-    path(augustus_config)
+    tuple val(meta), path(fasta), path(augustus_config), val(species)
     val(lineage)
 
     output:
@@ -32,12 +31,18 @@ process BUSCO {
     def prefix   = options.suffix ? "${meta.id}${options.suffix}" : "${meta.id}"
     if (lineage) options.args += " --lineage_dataset $lineage"
     """
-    # Copy the image's AUGUSTUS config directory if it was not provided to the module
-    [ ! -e augustus_config ] && cp -a /usr/local/config augustus_config
-    AUGUSTUS_CONFIG_PATH=augustus_config \\
+    if [ -e $augustus_config ]
+    then
+        # Copy the AUGUSTUS config directory as BUSO needs write access
+        cp -rL $augustus_config ${augustus_config}_copy && export AUGUSTUS_CONFIG_PATH=${augustus_config}_copy
+    else
+        # Copy the image's AUGUSTUS config directory if it was not provided to the module
+        cp -a /usr/local/config augustus_config && export AUGUSTUS_CONFIG_PATH='augustus_config'
+    fi
     busco \\
         $options.args \\
         --augustus \\
+        --augustus_species $species \\
         --mode genome \\
         --cpu $task.cpus \\
         --in  $fasta \\
